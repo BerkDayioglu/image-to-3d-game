@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>img2threejs Studio</title>
+  <meta name="description" content="Bir referans görseli img2threejs pipeline'ı ile kod-tabanlı, prosedürel bir Three.js 3D oyun modeline dönüştürün, test edin ve kodunu alın." />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github-dark.min.css" />
+  <link rel="stylesheet" href="css/app.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="img2threejs Studio ana sayfa">
+      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M16 2 29 9.5v13L16 30 3 22.5v-13z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 2v28M3 9.5l13 7.5 13-7.5" fill="none" stroke="currentColor" stroke-width="2" opacity=".55"/></svg>
+      <span>img2threejs <b>Studio</b></span>
+    </a>
+    <nav class="topnav">
+      <a href="#how">Nasıl çalışır</a>
+      <a href="#outputs">Çıktılar</a>
+      <a href="#pipeline-code">Pipeline kodları</a>
+      <button type="button" class="key-pill" data-open-settings>
+        <span class="dot" data-key-dot></span><span data-key-label>API anahtarı yok</span>
+      </button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="workspace">
+      <aside class="panel">
+        <div class="panel-block">
+          <h2><span class="num">1</span> Referans görsel</h2>
+          <label class="dropzone" data-dropzone>
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/avif" data-file hidden />
+            <img alt="" data-preview hidden />
+            <div class="dz-empty" data-dz-empty>
+              <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <strong>Görsel sürükle veya seç</strong>
+              <span>PNG, JPG veya WebP. Tek bir nesne ya da karakter, sade arka plan en iyi sonucu verir.</span>
+            </div>
+          </label>
+          <div class="image-meta" data-image-meta hidden></div>
+          <label class="field">
+            <span>Nesne hakkında not <em>(opsiyonel)</em></span>
+            <input type="text" data-hint maxlength="200" placeholder="ör. oyun için low-poly kılıç, arka yüzü düz" />
+          </label>
+        </div>
+
+        <div class="panel-block">
+          <h2><span class="num">2</span> Vision modeli <small data-model-count></small></h2>
+          <div class="model-picker" data-model-picker>
+            <button type="button" class="model-current" data-model-toggle aria-haspopup="listbox" aria-expanded="false">
+              <span class="model-name" data-model-name>Modeller yükleniyor…</span>
+              <span class="model-price" data-model-price></span>
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+            </button>
+            <div class="model-menu" data-model-menu hidden>
+              <input type="search" placeholder="Model ara (claude, gemini, gpt…)" data-model-search />
+              <label class="check"><input type="checkbox" data-model-free /> Sadece ücretsiz</label>
+              <ul role="listbox" data-model-list></ul>
+            </div>
+          </div>
+          <p class="hint">Liste OpenRouter'dan canlı çekilir; yalnızca <b>görsel girdi</b> destekleyen modeller gösterilir. Fiyatlar 1M token başına.</p>
+        </div>
+
+        <div class="panel-block actions">
+          <h2><span class="num">3</span> Dönüştür</h2>
+          <button type="button" class="btn primary big" data-convert disabled>3D'ye dönüştür</button>
+          <button type="button" class="btn secondary" data-refine disabled title="Render'ı referansla karşılaştırıp spec'i düzeltir">İyileştir: görsel inceleme turu</button>
+          <button type="button" class="btn ghost" data-cancel hidden>İptal et</button>
+          <p class="hint" data-action-hint>Önce bir görsel yükle ve OpenRouter anahtarını gir.</p>
+        </div>
+
+        <div class="panel-block">
+          <h2>Pipeline ilerlemesi <small data-cost></small></h2>
+          <ol class="steps" data-steps>
+            <li class="muted">Henüz çalıştırılmadı.</li>
+          </ol>
+        </div>
+      </aside>
+
+      <div class="stage">
+        <div class="stage-toolbar">
+          <div class="seg" role="tablist" aria-label="Görünüm modu">
+            <button type="button" role="tab" aria-selected="true" data-mode="inspect">İncele</button>
+            <button type="button" role="tab" aria-selected="false" data-mode="game">Oyun testi</button>
+          </div>
+          <div class="tools" data-inspect-tools>
+            <label class="select-sm" title="img2threejs look-dev ışık modları">
+              Işık
+              <select data-light>
+                <option value="neutral">Nötr</option>
+                <option value="reference">Referans</option>
+                <option value="grazing">Sıyırma</option>
+              </select>
+            </label>
+            <button type="button" class="icon-btn" data-toggle="rotate" aria-pressed="false" title="Otomatik döndür">⟳</button>
+            <button type="button" class="icon-btn" data-toggle="wire" aria-pressed="false" title="Wireframe">▦</button>
+            <button type="button" class="icon-btn" data-toggle="grid" aria-pressed="true" title="Zemin ızgarası">#</button>
+            <button type="button" class="icon-btn" data-toggle="compare" aria-pressed="false" title="Referansı yan yana göster">◧</button>
+            <label class="range-sm" title="Parçalara ayır">Ayır <input type="range" min="0" max="1" step="0.01" value="0" data-explode /></label>
+            <button type="button" class="icon-btn" data-screenshot title="Ekran görüntüsü (PNG)">⤓</button>
+          </div>
+        </div>
+
+        <div class="viewport" data-viewport>
+          <div class="empty-state" data-empty>
+            <div class="empty-cube" aria-hidden="true"></div>
+            <h3>Görselden oyun modeline</h3>
+            <p>Bir referans görsel yükle. img2threejs pipeline'ı onu primitifler, prosedürel malzemeler ve animasyona hazır bir hiyerarşiyle <b>tamamen kodla</b> yeniden inşa etsin.</p>
+          </div>
+          <div class="compare" data-compare hidden><img alt="Referans görsel" data-compare-img /><span>Referans</span></div>
+          <div class="badge-row">
+            <span class="badge" data-badge hidden></span>
+            <span class="badge score" data-score hidden></span>
+          </div>
+          <div class="stats" data-stats hidden></div>
+          <div class="busy" data-busy hidden><div class="spinner"></div><span data-busy-text>Çalışıyor…</span></div>
+          <div class="game-hud" data-game-hud hidden>
+            <div class="coins">🪙 <b data-coins>0</b>/10</div>
+            <div class="help"><kbd>WASD</kbd>/<kbd>←↑→↓</kbd> hareket · <kbd>Space</kbd> zıpla · <kbd>Shift</kbd> koş · <kbd>Q</kbd><kbd>E</kbd> döndür · sürükle: kamera</div>
+            <div class="touch-pad" data-touch>
+              <button type="button" data-key="ArrowUp">▲</button>
+              <button type="button" data-key="ArrowLeft">◀</button>
+              <button type="button" data-key="Space">⤒</button>
+              <button type="button" data-key="ArrowRight">▶</button>
+              <button type="button" data-key="ArrowDown">▼</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="below-stage">
+          <details class="parts" data-parts-wrap hidden>
+            <summary>Parçalar <span data-parts-count></span></summary>
+            <ul data-parts></ul>
+          </details>
+          <div class="review" data-review hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="outputs">
+      <div class="section-head">
+        <h2>Çıktılar: modeli başka bir yerde kullan</h2>
+        <p>Her çıktının ne olduğu ve nerede kullanılacağı altında yazıyor. Kodu görmek için karta tıkla; kod yalnızca açtığında gösterilir.</p>
+        <button type="button" class="btn secondary" data-zip disabled>Hepsini ZIP olarak indir</button>
+      </div>
+      <div class="cards" data-outputs>
+        <p class="muted">Bir model oluşturduğunda çıktılar burada görünecek.</p>
+      </div>
+    </section>
+
+    <section class="section" id="pipeline-code">
+      <div class="section-head">
+        <h2>Pipeline kodları: bu dönüşümde çalışan her şey</h2>
+        <p>Her adım için çalıştırılan komut, img2threejs'in orijinal Python kaynağı, LLM'e giden prompt ve gelen yanıt. Görmek için adıma tıkla.</p>
+      </div>
+      <div class="cards code-steps" data-code-steps>
+        <p class="muted">Dönüşüm çalıştığında adımlar burada listelenecek.</p>
+      </div>
+      <div class="static-code">
+        <h3>Studio'nun kendi kaynakları</h3>
+        <div class="chip-row" data-static-code></div>
+      </div>
+    </section>
+
+    <section class="section how" id="how">
+      <div class="section-head">
+        <h2>Nasıl çalışır?</h2>
+        <p>img2threejs, bir referans görseldeki nesneyi fotogrametri ya da hazır mesh kullanmadan, <b>yalnızca kodla</b> prosedürel bir Three.js modeli olarak yeniden inşa eden açık kaynaklı bir pipeline. Studio bu pipeline'ı tamamen tarayıcında çalıştırır.</p>
+      </div>
+      <ol class="how-grid">
+        <li><b>Intake</b><span><code>probe_image.py</code> görselin teknik uygunluğunu kontrol eder.</span></li>
+        <li><b>Vision (LLM)</b><span>Seçtiğin model görseli inceler ve bir SculptBrief yazar: bileşenler, primitifler, ölçüler, malzemeler, detay envanteri.</span></li>
+        <li><b>Spec</b><span><code>new_pre_spec_assessment.py</code> ve <code>new_sculpt_spec.py</code> ObjectSculptSpec iskeletini üretir, brief bununla birleştirilir.</span></li>
+        <li><b>Strict-quality kapısı</b><span><code>validate_sculpt_spec.py --strict-quality</code>. Hatalar LLM'e geri gönderilir ve spec düzeltilir.</span></li>
+        <li><b>Codegen</b><span><code>generate_threejs_factory.py</code> TypeScript <code>THREE.Group</code> factory'sini üretir. Tarayıcıda derlenip çalıştırılır.</span></li>
+        <li><b>Divine Eye incelemesi</b><span>"İyileştir" render'ları referansla karşılaştırır, <code>append_review.py</code> ile kaydeder ve spec'i düzeltir.</span></li>
+      </ol>
+      <div class="notes">
+        <p><b>Dürüst notlar.</b> Tek bir görsel gizli yüzleri gösteremez; bu kısımlar tahmin edilir ve spec'te <em>assumptions/unknowns</em> olarak işaretlenir. Hızlı modda tüm build pass'leri tek seferde üretilir ve <b>incelenmemiş önizleme</b> olarak etiketlenir. img2threejs'in pass başına görsel onay kapısı "İyileştir" turlarıyla uygulanır. PBR değerleri piksel çıkarımıyla değil, vision modelinin tahminiyle belirlenir.</p>
+        <p><b>Gizlilik.</b> Görselin ve API anahtarın yalnızca tarayıcında işlenir ve sadece OpenRouter'a (seçtiğin modele) gönderilir. Bu sitenin bir sunucusu yoktur.</p>
+        <p class="credit">Pipeline: <a href="https://github.com/img2threejs/img2threejs" target="_blank" rel="noopener">img2threejs/img2threejs</a> (Apache-2.0) · commit <code data-forge-commit>…</code> · Python: Pyodide · 3D: Three.js</p>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="modal settings" id="settings-modal">
+    <form method="dialog" class="modal-body" data-settings-form>
+      <header><h3>OpenRouter ayarları</h3><button type="submit" class="icon-btn" value="cancel" aria-label="Kapat">✕</button></header>
+      <label class="field">
+        <span>API anahtarı</span>
+        <input type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-v1-…" data-key-input />
+      </label>
+      <label class="check"><input type="checkbox" data-remember /> Bu tarayıcıda hatırla (localStorage)</label>
+      <p class="hint">Anahtarın yok mu? <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a> adresinden oluşturabilirsin. Anahtar yalnızca tarayıcından doğrudan OpenRouter'a gider. İstersen OpenRouter panelinden anahtara kredi limiti koyabilirsin.</p>
+      <p class="key-status" data-key-status></p>
+      <label class="field">
+        <span>Strict-quality düzeltme denemesi</span>
+        <select data-max-fix>
+          <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option>
+        </select>
+      </label>
+      <footer>
+        <button type="button" class="btn ghost" data-key-clear>Anahtarı sil</button>
+        <button type="button" class="btn secondary" data-key-test>Doğrula</button>
+        <button type="submit" class="btn primary" value="save">Kaydet</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog class="modal code" id="code-modal">
+    <div class="modal-body">
+      <header>
+        <div><h3 data-code-title></h3><p data-code-desc></p></div>
+        <button type="button" class="icon-btn" data-code-close aria-label="Kapat">✕</button>
+      </header>
+      <div class="code-tabs" role="tablist" data-code-tabs></div>
+      <div class="code-toolbar"><span data-code-meta></span><span><button type="button" class="btn ghost sm" data-code-copy>Kopyala</button><button type="button" class="btn secondary sm" data-code-download>İndir</button></span></div>
+      <pre class="code-pre"><code></code></pre>
+    </div>
+  </dialog>
+
+  <div class="toast" data-toast hidden></div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

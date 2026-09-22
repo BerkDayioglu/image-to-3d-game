@@ -1,0 +1,221 @@
+// Everything the user needs to reuse the reconstructed model elsewhere.
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+
+export const THREE_VERSION = '0.170.0';
+const CDN = `https://cdn.jsdelivr.net/npm/three@${THREE_VERSION}`;
+
+export function baseName(exportsInfo) {
+  return (exportsInfo?.model || 'createObjectModel').replace(/^create/, '').replace(/Model$/, '') || 'Object';
+}
+
+// glTF stores userData as JSON "extras"; the factory's runtime maps (nodes/meshes) are circular.
+function jsonSafe(userData) {
+  const out = {};
+  for (const [key, value] of Object.entries(userData || {})) {
+    if (typeof value === 'function') continue;
+    try {
+      JSON.stringify(value);
+      out[key] = value;
+    } catch {
+      /* drop circular / non-serialisable runtime references */
+    }
+  }
+  return out;
+}
+
+export async function exportGlb(model) {
+  const exporter = new GLTFExporter();
+  const originals = new Map();
+  model.traverse((o) => {
+    originals.set(o, o.userData);
+    o.userData = jsonSafe(o.userData);
+    const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+    mats.forEach((m) => {
+      if (!originals.has(m)) {
+        originals.set(m, m.userData);
+        m.userData = jsonSafe(m.userData);
+      }
+    });
+  });
+  let clone;
+  try {
+    clone = model.clone(true);
+  } finally {
+    originals.forEach((ud, obj) => (obj.userData = ud));
+  }
+  clone.updateMatrixWorld(true);
+  const result = await exporter.parseAsync(clone, { binary: true, onlyVisible: true, maxTextureSize: 2048 });
+  return new Blob([result], { type: 'model/gltf-binary' });
+}
+
+export function importMapBlock() {
+  return `<script type="importmap">
+{
+  "imports": {
+    "three": "${CDN}/build/three.module.js",
+    "three/examples/jsm/": "${CDN}/examples/jsm/",
+    "three/addons/": "${CDN}/examples/jsm/"
+  }
+}
+</script>`;
+}
+
+export function threeUsage(exportsInfo, ext = 'js') {
+  const n = baseName(exportsInfo);
+  const e = exportsInfo;
+  return `// npm i three@${THREE_VERSION}
+import * as THREE from 'three';
+import { ${e.model}, ${e.lights}, ${e.environment}, ${e.renderer} } from './create${n}Model.${ext}';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.shadowMap.enabled = true;
+${e.renderer}(renderer);                  // ACES tone mapping + sRGB output
+
+const scene = new THREE.Scene();
+scene.environment = ${e.environment}(renderer);   // procedural RoomEnvironment, no HDR file needed
+scene.add(${e.lights}('neutral'));        // 'neutral' | 'grazing' | 'reference'
+
+const model = ${e.model}({ castShadow: true, receiveShadow: true });
+model.position.set(0, 0, 0);
+scene.add(model);
+
+// Runtime hierarchy for game logic:
+//   model.getObjectByName('<part>__pivot')  -> pivot group of a component (animate this)
+//   model.userData / child.userData.actionProfile -> pivots, sockets, colliders from the spec
+function loop(dt) { model.userData.tick?.(dt); }`;
+}
+
+export function r3fComponent(exportsInfo) {
+  const n = baseName(exportsInfo);
+  const e = exportsInfo;
+  return `// ${n}.tsx — React Three Fiber wrapper around the img2threejs factory
+// npm i three@${THREE_VERSION} @react-three/fiber @react-three/drei
+import { useEffect, useMemo } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
+import type { ThreeElements } from '@react-three/fiber';
+import { ${e.model}, ${e.environment}, ${e.renderer} } from './create${n}Model';
+
+export function ${n}(props: ThreeElements['group']) {
+  const model = useMemo(() => ${e.model}({ castShadow: true, receiveShadow: true }), []);
+  const { gl, scene } = useThree();
+
+  useEffect(() => {
+    ${e.renderer}(gl);
+    if (!scene.environment) scene.environment = ${e.environment}(gl);
+    return () => model.traverse((o: any) => o.geometry?.dispose());
+  }, [gl, scene, model]);
+
+  useFrame((_, dt) => model.userData.tick?.(dt));
+
+  return (
+    <group {...props}>
+      <primitive object={model} />
+    </group>
+  );
+}
+
+/* Usage:
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls } from '@react-three/drei';
+import { ${n} } from './${n}';
+
+export default function App() {
+  return (
+    <Canvas shadows camera={{ position: [2, 1.5, 3], fov: 35 }}>
+      <directionalLight position={[-4, 6, 5]} intensity={2} castShadow />
+      <${n} position={[0, 0, 0]} />
+      <OrbitControls />
+    </Canvas>
+  );
+}
+*/`;
+}
+
+export function standaloneHtml(jsCode, exportsInfo, title) {
+  const e = exportsInfo;
+  const safe = jsCode.replace(/<\/script/gi, '<\\/script');
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHtml(title)} — img2threejs</title>
+<style>html,body{margin:0;height:100%;background:#1b1e24;overflow:hidden}canvas{display:block;width:100%;height:100%}</style>
+${importMapBlock()}
+</head>
+<body>
+<script type="module">
+${safe}
+
+// ---- viewer (generated by img2threejs Studio) ----
+import * as __THREE from 'three';
+import { OrbitControls as __Orbit } from 'three/examples/jsm/controls/OrbitControls.js';
+const renderer = new __THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+${e.renderer}(renderer);
+const scene = new __THREE.Scene();
+scene.background = new __THREE.Color('#1b1e24');
+scene.environment = ${e.environment}(renderer);
+scene.add(${e.lights}('neutral'));
+const model = ${e.model}({ castShadow: true, receiveShadow: true });
+const box = new __THREE.Box3().setFromObject(model);
+const c = box.getCenter(new __THREE.Vector3());
+model.position.set(-c.x, -box.min.y, -c.z);
+scene.add(model);
+const ground = new __THREE.Mesh(new __THREE.CircleGeometry(10, 64), new __THREE.ShadowMaterial({ opacity: 0.35 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const camera = new __THREE.PerspectiveCamera(35, 1, 0.01, 200);
+const size = box.getSize(new __THREE.Vector3());
+const r = Math.max(size.x, size.y, size.z) * 0.5;
+const d = r / Math.sin((35 * Math.PI) / 360) * 1.25;
+camera.position.set(d * 0.5, size.y * 0.5 + d * 0.3, d * 0.8);
+const controls = new __Orbit(camera, renderer.domElement);
+controls.target.set(0, size.y * 0.5, 0); controls.enableDamping = true; controls.autoRotate = true;
+function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+const clock = new __THREE.Clock();
+renderer.setAnimationLoop(() => { model.userData.tick?.(clock.getDelta()); controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>`;
+}
+
+export function iframeSnippet(fileName) {
+  return `<!-- Host ${fileName} next to your page (or on any static host) and embed it: -->
+<iframe src="${fileName}" width="640" height="480" style="border:0;border-radius:12px" loading="lazy" title="3D model"></iframe>`;
+}
+
+export function engineGuide(fileName) {
+  return `GLB import guide — ${fileName}
+
+Unity (2020.3+):   Package Manager → "glTFast" (com.unity.cloud.gltfast) → drag ${fileName} into Assets.
+Unreal Engine 5:   Enable the "glTF Importer" plugin → Content Browser → Import → ${fileName}.
+Godot 4:           Copy ${fileName} into the project folder — it is imported automatically as a scene.
+Blender:           File → Import → glTF 2.0 (.glb/.gltf).
+Three.js:          new GLTFLoader().load('${fileName}', (gltf) => scene.add(gltf.scene));
+Babylon.js:        BABYLON.SceneLoader.ImportMesh('', './', '${fileName}', scene);
+PlayCanvas / Spline / Sketchfab: upload the .glb directly.
+
+Notes
+- Units: 1 unit = 1 metre in most engines; the model spans ~1–2 units on its largest axis. Scale as needed.
+- Materials are exported as glTF PBR metallic-roughness; procedural canvas textures are baked into PNGs.
+- Each img2threejs component is its own node (named "<part>__pivot"), so parts stay animatable.`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+}
+
+export function download(name, data, type = 'text/plain') {
+  const blob = data instanceof Blob ? data : new Blob([data], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}

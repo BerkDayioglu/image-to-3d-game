@@ -1,0 +1,403 @@
+{
+ "targetName": "Red Ceramic Mug",
+ "suitability": "pass",
+ "complexity": "moderate",
+ "objectClass": {
+  "primaryType": "ceramic coffee mug",
+  "primaryDomain": "object",
+  "formLanguage": [
+   "cylindrical",
+   "rounded"
+  ],
+  "structureKind": [
+   "rigid-shell",
+   "handle-appendage"
+  ],
+  "motionPotential": [
+   "static-display"
+  ],
+  "materialFamilies": [
+   "glazed-ceramic"
+  ],
+  "notes": "Glossy red glazed mug with C handle."
+ },
+ "silhouette": {
+  "boundingShape": "cylinder with side loop",
+  "aspectRatios": [
+   "height:diameter 1.1"
+  ],
+  "symmetry": "bilateral about XY plane",
+  "dominantCurves": [
+   "cylindrical body",
+   "C-shaped handle"
+  ],
+  "negativeSpaces": [
+   "handle opening"
+  ],
+  "landmarks": [
+   "rim",
+   "foot ring",
+   "handle"
+  ]
+ },
+ "observations": [
+  "Glossy red glaze with bright specular",
+  "White interior",
+  "Unglazed foot ring"
+ ],
+ "referenceCamera": {
+  "yaw": 20,
+  "pitch": 15,
+  "fovDegrees": 35
+ },
+ "materials": [
+  {
+   "id": "redGlaze",
+   "name": "Red glaze",
+   "finish": "glossy-ceramic",
+   "baseColor": "#b3202a",
+   "secondary": [
+    "#c93a40",
+    "#8a1820"
+   ],
+   "roughness": 0.18,
+   "metalness": 0,
+   "clearcoat": 0.8,
+   "textureStrength": 0.1,
+   "edgeWear": 0.02,
+   "localOverrides": [
+    {
+     "id": "rim-glaze-thin",
+     "description": "Glaze thins to lighter red at the rim",
+     "confidence": 0.6
+    }
+   ]
+  },
+  {
+   "id": "whiteGlaze",
+   "name": "Interior white glaze",
+   "finish": "glossy-ceramic",
+   "baseColor": "#f2efe8",
+   "roughness": 0.2,
+   "textureStrength": 0.08
+  },
+  {
+   "id": "bisque",
+   "name": "Unglazed foot",
+   "finish": "matte-ceramic",
+   "baseColor": "#d8cbb5",
+   "roughness": 0.85,
+   "textureStrength": 0.5
+  }
+ ],
+ "components": [
+  {
+   "id": "body",
+   "name": "Mug body",
+   "level": "macro",
+   "role": "body",
+   "primitive": "lathe",
+   "material": "redGlaze",
+   "latheProfile": [
+    [
+     0.0,
+     -0.5
+    ],
+    [
+     0.36,
+     -0.5
+    ],
+    [
+     0.4,
+     -0.46
+    ],
+    [
+     0.42,
+     0.45
+    ],
+    [
+     0.4,
+     0.5
+    ],
+    [
+     0.37,
+     0.5
+    ],
+    [
+     0.37,
+     -0.42
+    ],
+    [
+     0.0,
+     -0.42
+    ]
+   ],
+   "dimensions": {
+    "width": 0.84,
+    "height": 1.0,
+    "depth": 0.84
+   },
+   "position": [
+    0,
+    0.5,
+    0
+   ],
+   "features": [
+    {
+     "id": "glaze-drip",
+     "description": "slight glaze pooling near the foot"
+    },
+    {
+     "id": "rim-roll",
+     "description": "rolled rim"
+    }
+   ]
+  },
+  {
+   "id": "handle",
+   "name": "C handle",
+   "level": "macro",
+   "role": "handle",
+   "primitive": "torus",
+   "torusTubeRatio": 0.2,
+   "parent": "body",
+   "material": "redGlaze",
+   "dimensions": {
+    "width": 0.5,
+    "height": 0.6,
+    "depth": 0.1
+   },
+   "position": [
+    0.45,
+    0.02,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "features": [
+    "handle thumb rest flattening"
+   ]
+  },
+  {
+   "id": "interior",
+   "name": "Interior glaze",
+   "level": "meso",
+   "role": "liner",
+   "primitive": "cylinder",
+   "parent": "body",
+   "material": "whiteGlaze",
+   "dimensions": {
+    "width": 0.72,
+    "height": 0.9,
+    "depth": 0.72
+   },
+   "position": [
+    0,
+    0.04,
+    0
+   ]
+  },
+  {
+   "id": "rim",
+   "name": "Rim lip",
+   "level": "meso",
+   "role": "rim",
+   "primitive": "torus",
+   "torusTubeRatio": 0.05,
+   "parent": "body",
+   "material": "redGlaze",
+   "dimensions": {
+    "width": 0.8,
+    "height": 0.8,
+    "depth": 0.03
+   },
+   "position": [
+    0,
+    0.5,
+    0
+   ],
+   "rotation": [
+    1.5708,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "foot",
+   "name": "Foot ring",
+   "level": "meso",
+   "role": "base",
+   "primitive": "cylinder",
+   "parent": "body",
+   "material": "bisque",
+   "dimensions": {
+    "width": 0.7,
+    "height": 0.03,
+    "depth": 0.7
+   },
+   "position": [
+    0,
+    -0.5,
+    0
+   ]
+  },
+  {
+   "id": "logo",
+   "name": "Printed logo",
+   "level": "micro",
+   "role": "decal",
+   "primitive": "plane-card",
+   "parent": "body",
+   "material": "whiteGlaze",
+   "dimensions": {
+    "width": 0.2,
+    "height": 0.2,
+    "depth": 0.01
+   },
+   "position": [
+    0,
+    0.05,
+    0.425
+   ]
+  },
+  {
+   "id": "handleJoint",
+   "name": "Handle upper joint",
+   "level": "micro",
+   "role": "joint",
+   "primitive": "sphere",
+   "parent": "handle",
+   "material": "redGlaze",
+   "dimensions": {
+    "width": 0.1,
+    "height": 0.1,
+    "depth": 0.1
+   },
+   "position": [
+    -0.2,
+    0.25,
+    0
+   ]
+  }
+ ],
+ "details": [
+  {
+   "id": "rim-lip",
+   "description": "Rolled rim lip",
+   "priority": "critical",
+   "kind": "bevel",
+   "componentRef": "rim"
+  },
+  {
+   "id": "foot",
+   "description": "Unglazed foot ring",
+   "priority": "important",
+   "kind": "contour",
+   "componentRef": "foot",
+   "materialRef": "bisque"
+  },
+  {
+   "id": "gloss",
+   "description": "Glossy clearcoat highlight",
+   "priority": "critical",
+   "kind": "gloss",
+   "componentRef": "body",
+   "materialRef": "redGlaze"
+  },
+  {
+   "id": "handle-shape",
+   "description": "C-shaped handle",
+   "priority": "critical",
+   "kind": "contour",
+   "componentRef": "handle"
+  },
+  {
+   "id": "logo",
+   "description": "small white logo",
+   "priority": "minor",
+   "kind": "decal",
+   "componentRef": "logo"
+  },
+  {
+   "id": "rim-thin",
+   "description": "glaze thinning at rim",
+   "priority": "minor",
+   "kind": "wear",
+   "materialRef": "redGlaze",
+   "mapsTo": "redGlaze/rim-glaze-thin"
+  }
+ ],
+ "featureReviewTargets": [
+  {
+   "id": "mug-silhouette",
+   "name": "Cylindrical body silhouette",
+   "tier": "critical",
+   "passIds": [
+    "blockout"
+   ],
+   "componentRefs": [
+    "body"
+   ]
+  },
+  {
+   "id": "handle-loop",
+   "name": "C handle loop",
+   "tier": "critical",
+   "passIds": [
+    "structural-pass"
+   ],
+   "componentRefs": [
+    "handle"
+   ]
+  },
+  {
+   "id": "glaze",
+   "name": "Glossy red glaze",
+   "tier": "critical",
+   "passIds": [
+    "material-pass"
+   ],
+   "componentRefs": [
+    "body"
+   ]
+  }
+ ],
+ "lighting": {
+  "key": {
+   "direction": "upper left",
+   "intensity": "strong"
+  },
+  "fill": "right soft",
+  "rim": "back",
+  "environment": "studio softbox"
+ },
+ "risks": [
+  "Interior depth guessed"
+ ],
+ "assumptions": [
+  "Back side matches front"
+ ],
+ "repetitions": [
+  {
+   "id": "foot-dots",
+   "parent": "foot",
+   "primitive": "sphere",
+   "material": "bisque",
+   "count": 8,
+   "radius": 0.33,
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "instanceScale": [
+    0.03,
+    0.03,
+    0.03
+   ]
+  }
+ ]
+}

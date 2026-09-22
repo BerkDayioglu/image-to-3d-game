@@ -1,0 +1,13 @@
+{
+  "name": "img2threejs-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Referans görselden img2threejs pipeline'ı ile prosedürel Three.js oyun modeli üreten statik web uygulaması.",
+  "scripts": {
+    "dev": "python scripts/dev_server.py 8765",
+    "build:forge": "python scripts/build_forge_bundle.py",
+    "update:forge": "python scripts/build_forge_bundle.py --update",
+    "deploy": "npx wrangler pages deploy site --project-name img2threejs-studio"
+  },
+  "license": "Apache-2.0"
+}
