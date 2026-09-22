@@ -14,7 +14,7 @@ Sunucu yok. Görsel ve API anahtarı yalnızca kullanıcının tarayıcısında 
 ## Proje yapısı
 
 ```
-site/                       ← Cloudflare Pages'e deploy edilen klasör (build adımı yok)
+site/                       ← Cloudflare Worker'ın statik olarak sunduğu klasör (build adımı yok)
   index.html, css/, js/
   py/studio_pipeline.py     ← Pyodide adaptörü (brief → ObjectSculptSpec, forge çağrıları)
   forge.zip                 ← img2threejs forge/ + docs/ + grimoire/ paketi (scripts/build_forge_bundle.py üretir)
@@ -25,7 +25,7 @@ vendor/img2threejs/         ← img2threejs'in vendored kopyası (Apache-2.0)
 scripts/
   build_forge_bundle.py     ← forge.zip'i üretir (--update ile upstream'i yeniden çeker)
   dev_server.py             ← yerel önizleme (cache kapalı)
-wrangler.toml               ← Cloudflare Pages yapılandırması
+wrangler.toml               ← Cloudflare Workers yapılandırması (static assets: ./site)
 ```
 
 ## Yerelde çalıştırma
@@ -40,27 +40,28 @@ Ardından http://localhost:8765 adresini aç. LLM çağırmadan pipeline'ı dene
 
 ## Cloudflare'e subdomain olarak deploy
 
-### Seçenek A: GitHub + Cloudflare Pages (önerilen, her push'ta otomatik deploy)
+Site, sunucu kodu olmayan bir **Cloudflare Worker** olarak yayınlanır: `wrangler.toml` içindeki `[assets]` ayarı `site/` klasörünü statik dosya olarak sunar, `site/_headers` başlıkları uygular.
 
-1. Bu klasörü bir GitHub reposuna push et.
-2. Cloudflare Dashboard → **Workers & Pages** → **Create** → **Pages** → **Connect to Git** → repoyu seç.
-3. Build ayarları:
-   - Framework preset: **None**
+### Seçenek A: GitHub + Cloudflare Workers (önerilen, her push'ta otomatik deploy)
+
+1. Cloudflare Dashboard → **Workers & Pages** → **Create** → **Import a repository** → GitHub'ı bağla ve repoyu seç.
+2. Ayarlar:
+   - Project name: `image-to-3d-game` (`wrangler.toml` içindeki `name` ile aynı olmalı)
    - Build command: *(boş bırak)*
-   - Build output directory: `site`
-4. **Save and Deploy**. Site `https://<proje>.pages.dev` adresinde yayına girer.
-5. Pages projesi → **Custom domains** → **Set up a custom domain** → örn. `3d.alanadin.com`.
-   Alan adın Cloudflare'de ise CNAME kaydı otomatik oluşturulur ve SSL birkaç dakikada aktif olur.
+   - Deploy command: `npx wrangler deploy`
+3. **Deploy**. Site `https://image-to-3d-game.<hesap-adın>.workers.dev` adresinde yayına girer.
+   Bundan sonra `main` dalına her push otomatik deploy olur.
+4. Worker → **Settings** → **Domains & Routes** → **Add** → **Custom domain** → örn. `3d.alanadin.com`.
+   Alan adın Cloudflare'de ise DNS kaydı ve SSL otomatik ayarlanır.
 
-### Seçenek B: Wrangler ile doğrudan yükleme
+### Seçenek B: Wrangler ile bilgisayardan deploy
 
 ```bash
 npx wrangler login
-npx wrangler pages project create img2threejs-studio --production-branch main
-npx wrangler pages deploy site --project-name img2threejs-studio
+npx wrangler deploy
 ```
 
-Sonra subdomain'i yine Dashboard → Pages projesi → **Custom domains** üzerinden ekle.
+Yapılandırmayı yüklemeden denemek için: `npx wrangler deploy --dry-run`. Subdomain'i yine Dashboard → Worker → **Settings** → **Domains & Routes** üzerinden ekle.
 
 ## img2threejs'i güncelleme
 

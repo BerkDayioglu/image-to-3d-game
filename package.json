@@ -7,7 +7,7 @@
     "dev": "python scripts/dev_server.py 8765",
     "build:forge": "python scripts/build_forge_bundle.py",
     "update:forge": "python scripts/build_forge_bundle.py --update",
-    "deploy": "npx wrangler pages deploy site --project-name img2threejs-studio"
+    "deploy": "npx wrangler deploy"
   },
   "license": "Apache-2.0"
 }
