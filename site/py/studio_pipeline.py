@@ -181,6 +181,28 @@ def detail_kind(value: Any) -> str:
     return "contour"
 
 
+PRIMARY_VIEW_ID = "full-object"
+VIEW_ANGLES = {
+    "front": "front elevation",
+    "three-quarter": "three-quarter view",
+    "side": "side elevation",
+    "back": "rear elevation",
+    "top": "top-down view",
+    "bottom": "underside view",
+    "detail": "close-up detail",
+    "other": "additional view",
+}
+
+
+def view_id(index: int, angle: str) -> str:
+    """Stable viewEvidence id. The first reference keeps the starter spec's id so the
+    qualityContract feature groups authored by new_sculpt_spec.py stay resolvable."""
+    if index == 0:
+        return PRIMARY_VIEW_ID
+    angle = angle if angle in VIEW_ANGLES else "other"
+    return f"view-{index + 1}-{angle}"
+
+
 def _num(value: Any, default: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return default
@@ -234,6 +256,12 @@ def _strings(value: Any) -> list[str]:
     if isinstance(value, str) and value.strip():
         return [value]
     return []
+
+
+def _refs(value: Any, view_ids: list[str]) -> list[str]:
+    """Keep only evidence ids that exist in viewEvidence (the validator rejects unknown ones)."""
+    refs = [v for v in _strings(value) if v in view_ids]
+    return refs or [view_ids[0]]
 
 
 def _rotate(vec: list[float], rot: list[float]) -> list[float]:
@@ -368,6 +396,7 @@ def _expand_component(
     ids: set[str],
     material_ids: list[str],
     brief_by_id: dict[str, dict[str, Any]],
+    view_ids: list[str],
 ) -> dict[str, Any]:
     comp_id = _slug(c.get("id"), f"part-{index}")
     primitive = str(c.get("primitive") or "box").strip().lower()
@@ -395,6 +424,8 @@ def _expand_component(
     layers = [material] + [
         _slug(x, "") for x in (c.get("materialLayers") or []) if _slug(x, "") in material_ids and _slug(x, "") != material
     ]
+
+    evidence = _refs(c.get("evidence") or c.get("evidenceRefs") or c.get("views"), view_ids)
 
     descriptor: dict[str, Any] = {
         "topologyIntent": str(c.get("shapeNotes") or f"{primitive} {c.get('name') or comp_id}"),
@@ -474,7 +505,7 @@ def _expand_component(
                 "contactType": contact,
                 "embedDepth": round(max(0.002, min(dims["width"], dims["height"]) * 0.05), 5),
                 "gapTolerance": 0.004,
-                "evidenceRefs": ["full-object"],
+                "evidenceRefs": evidence,
             }
             transform["rotation"] = [0.0, 0.0, 0.0]
         else:
@@ -487,7 +518,7 @@ def _expand_component(
                 "contactType": contact,
                 "embedDepth": round(max(0.002, min(dims["width"], dims["height"], dims["depth"]) * 0.05), 5),
                 "gapTolerance": 0.004,
-                "evidenceRefs": ["full-object"],
+                "evidenceRefs": evidence,
             }
     transform["scale"] = [round(v, 5) for v in _unit_scale(primitive, dims, descriptor)]
 
@@ -514,7 +545,7 @@ def _expand_component(
                     "description": str(text),
                     "confidence": 0.65,
                     "level": level,
-                    "evidence": ["full-object"],
+                    "evidence": _refs((f.get("evidence") if isinstance(f, dict) else None) or evidence, view_ids),
                 }
             )
 
@@ -540,21 +571,55 @@ def _expand_component(
             "secondaryAlbedo": _rgba(_shade(dominant, 0.85)),
             "materialClass": material_class(mat_brief),
             "materialClassConfidence": 0.6,
-            "evidence": ["full-object"],
+            "evidence": evidence,
             "samplingNotes": "Dominant albedo chosen by the vision model from the reference image.",
         },
         "actionProfile": action,
         "localFeatures": features,
+        "evidenceRefs": evidence,
     }
     if color:
         component["colorOverride"] = color
     return component
 
 
-def expand_brief(starter: dict[str, Any], brief: dict[str, Any]) -> dict[str, Any]:
+def expand_brief(starter: dict[str, Any], brief: dict[str, Any], views: Any = None) -> dict[str, Any]:
+    """`views` is the reference-image set the user uploaded:
+    [{"angle": "front", "path": "/work/refs/....png", "name": "..."}, ...].
+    Each one becomes a viewEvidence entry the spec's components can cite."""
     spec = copy.deepcopy(starter)
     spec["targetName"] = safe_name(spec.get("targetName"))
     psa = spec.setdefault("preSpecAssessment", {})
+
+    # --- reference views ------------------------------------------------------------------
+    uploaded = [v for v in (views or []) if isinstance(v, dict)] or [{"angle": "front"}]
+    brief_views = {
+        str(v.get("id")): v for v in (brief.get("views") or []) if isinstance(v, dict) and v.get("id")
+    }
+    view_entries: list[dict[str, Any]] = []
+    for index, item in enumerate(uploaded):
+        angle = str(item.get("angle") or "other").lower()
+        angle = angle if angle in VIEW_ANGLES else "other"
+        vid = view_id(index, angle)
+        observed = brief_views.get(vid, {})
+        view_entries.append(
+            {
+                "id": vid,
+                "view": "primary" if index == 0 else angle,
+                "angle": angle,
+                "note": VIEW_ANGLES[angle],
+                "sourceImage": str(item.get("path") or ""),
+                "imageRegion": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0, "units": "normalized"},
+                "observations": _strings(observed.get("observations")) or (_strings(brief.get("observations")) if index == 0 else []),
+                "confidence": round(min(1.0, max(0.0, _num(observed.get("confidence"), 0.65))), 3),
+            }
+        )
+    spec["viewEvidence"] = view_entries
+    view_ids = [v["id"] for v in view_entries]
+    spec["referenceImages"] = [
+        {"id": v["id"], "angle": v["angle"], "sourceImage": v["sourceImage"], "name": str(uploaded[i].get("name") or "")}
+        for i, v in enumerate(view_entries)
+    ]
 
     # --- identity & assessment ------------------------------------------------------------
     oc = brief.get("objectClass") if isinstance(brief.get("objectClass"), dict) else {}
@@ -617,7 +682,8 @@ def expand_brief(starter: dict[str, Any], brief: dict[str, Any]) -> dict[str, An
     for c in ordered:
         visit(c)
     spec["componentTree"] = [
-        _expand_component(template_comp, c, i, ids, material_ids, brief_by_id) for i, c in enumerate(emitted)
+        _expand_component(template_comp, c, i, ids, material_ids, brief_by_id, view_ids)
+        for i, c in enumerate(emitted)
     ]
 
     # --- repetition systems ---------------------------------------------------------------
@@ -639,7 +705,7 @@ def expand_brief(starter: dict[str, Any], brief: dict[str, Any]) -> dict[str, An
             "level": r.get("level") if r.get("level") in LEVELS else "micro",
             "target": elements[0] if elements else rep_id,
             "realization": str(r.get("notes") or ("Parts authored individually; documented as one system." if elements else "THREE.InstancedMesh ring around the parent centre.")),
-            "evidence": ["full-object"],
+            "evidence": _refs(r.get("evidence"), view_ids),
             "confidence": 0.6,
             "buildsGeometry": not elements,
         }
@@ -704,7 +770,7 @@ def expand_brief(starter: dict[str, Any], brief: dict[str, Any]) -> dict[str, An
                 "priority": d.get("priority") if d.get("priority") in {"critical", "important", "minor"} else "important",
                 "componentRef": comp_ref or spec["componentTree"][0]["id"],
                 "materialRef": mat_ref or material_ids[0],
-                "evidenceRef": "full-object",
+                "evidenceRef": _refs(d.get("evidence") or d.get("evidenceRef"), view_ids)[0],
                 "confidence": round(min(1.0, max(0.0, _num(d.get("confidence"), 0.65))), 3),
                 "realization": "unreported",
                 "kind": detail_kind(d.get("kind")),
@@ -732,7 +798,7 @@ def expand_brief(starter: dict[str, Any], brief: dict[str, Any]) -> dict[str, An
                 "minimumScore": 0.8 if tier == "critical" else 0.7,
                 "mustPass": tier == "critical",
                 "componentRefs": refs,
-                "evidenceRefs": ["full-object"],
+                "evidenceRefs": _refs(t.get("evidence") or t.get("evidenceRefs"), view_ids),
             }
         )
     if frts:
@@ -747,9 +813,6 @@ def expand_brief(starter: dict[str, Any], brief: dict[str, Any]) -> dict[str, An
         "negativeSpaces": _strings(sil.get("negativeSpaces")),
         "landmarks": _strings(sil.get("landmarks")),
     }
-    if spec.get("viewEvidence"):
-        spec["viewEvidence"][0]["observations"] = _strings(brief.get("observations"))
-        spec["viewEvidence"][0]["confidence"] = 0.65
     cam = brief.get("referenceCamera") if isinstance(brief.get("referenceCamera"), dict) else {}
     rc = spec.setdefault("referenceCamera", {})
     rc.setdefault("orientation", {})
@@ -773,7 +836,7 @@ def expand_brief(starter: dict[str, Any], brief: dict[str, Any]) -> dict[str, An
                 "direction": str(item.get("direction") or {"key": "upper-left, ~45deg elevation", "fill": "front-right, low", "rim": "behind, above", "environment": "soft studio IBL"}[role]),
                 "colorTemp": str(item.get("colorTemp") or "neutral"),
                 "intensity": str(item.get("intensity") or ("moderate" if role == "key" else "low")),
-                "evidence": ["full-object"],
+                "evidence": [view_ids[0]],
             }
         )
     entries[-1]["note"] = str(light.get("notes") or "ACES filmic tone mapping, exposure ~1.0, neutral background, soft contact shadow on the ground plane.")
@@ -956,7 +1019,7 @@ def api(action: str, payload_json: str) -> str:
     elif action == "starter":
         result = starter_spec(payload["name"], payload["image"], payload.get("complexity", "moderate"))
     elif action == "expand":
-        result = {"spec": expand_brief(payload["starter"], payload["brief"])}
+        result = {"spec": expand_brief(payload["starter"], payload["brief"], payload.get("views"))}
     elif action == "check":
         result = check(payload["spec"])
         result["cli"] = validate_cli(payload["spec"])

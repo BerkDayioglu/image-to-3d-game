@@ -18,7 +18,8 @@ SculptBrief JSON schema (all lengths in model units, Y is up, +Z faces the viewe
                    "materialFamilies": [string], "notes": string },
   "silhouette": { "boundingShape": string, "aspectRatios": [string], "symmetry": string,
                   "dominantCurves": [string], "negativeSpaces": [string], "landmarks": [string] },
-  "observations": [string],                    // what you actually see: colours, finishes, parts, proportions
+  "observations": [string],                    // what you actually see in the PRIMARY view: colours, finishes, parts, proportions
+  "views": [ { "id": viewEvidence id given to you, "observations": [string], "confidence": 0-1 } ],  // one entry per reference image you were given
   "referenceCamera": { "yaw": deg, "pitch": deg, "fovDegrees": deg },   // camera of the photo relative to the object front
   "materials": [ {
       "id": camelCase, "name": string,
@@ -47,6 +48,7 @@ SculptBrief JSON schema (all lengths in model units, Y is up, +Z faces the viewe
       "color": "#rrggbb" (optional per-part albedo override),
       "importance": 0-1, "confidence": 0-1,
       "features": [ { "id": camelCase, "description": string } ],   // micro details carried by this part (seams, screws, prints, grooves)
+      "evidence": [viewEvidence id],            // which reference image(s) this part is visible in; omit if only the primary view shows it
       "shapeNotes": string,
       // primitive-specific (only when used):
       "torusTubeRatio": 0.02-0.9,               // torus: tube radius / ring radius
@@ -68,7 +70,7 @@ SculptBrief JSON schema (all lengths in model units, Y is up, +Z faces the viewe
   "details": [ {                                // detailInventory: identity-defining small details
       "id": kebab-case, "description": string, "priority": "critical" | "important" | "minor",
       "kind": "gloss"|"bevel"|"fastener"|"linework"|"contour"|"seam"|"stitch"|"stain"|"scratch"|"chip"|"decal"|"emissive"|"hole"|"groove"|"ridge",
-      "componentRef": componentId, "materialRef": materialId,
+      "componentRef": componentId, "materialRef": materialId, "evidence": viewEvidence id,
       "mapsTo": componentId | featureId | "materialId/overrideId",   // must name a real component, feature or material override
       "confidence": 0-1
   } ],
@@ -113,7 +115,14 @@ Work in this order (img2threejs core promise):
 3. Detail inventory first: enumerate identity-defining small details (gloss, bevels, fasteners, seams, printed linework, grooves, stains/wear) before decomposing. Every detail must map to a real component, feature or material override — drop any detail you cannot place instead of faking it.
 4. Decompose: macro masses -> meso parts -> micro features. Hold proportions and silhouette to the reference: measure relative sizes from the pixels (e.g. "handle is 55% of body height"). Choose the primitive that matches each part's true form (lathe for turned/revolved forms, extrude for flat outlines, tapered-sweep for bent or tapering parts) — not boxes everywhere.
 5. Materials: derive colours from the reference pixels (sRGB hex), separate finish classes (matte vs gloss vs metal), set roughness/metalness honestly; flag colours or regions you are unsure of.
-6. State what a single image cannot show (hidden sides) in assumptions/unknowns instead of faking confidence.
+6. State what the reference images cannot show (hidden sides) in assumptions/unknowns instead of faking confidence.
+
+Reference views: you may be given ONE image or SEVERAL views of the same subject. Each image has a viewEvidence id (listed in the user message). Use them:
+- Cross-check proportions and parts across views; a part seen from two angles should have consistent dimensions and placement.
+- Put each part's "evidence" list on the view ids that actually show it, and add one "views" entry per image with what that image adds.
+- Build the real 3D depth from the views you have instead of guessing: a side view fixes depth, a top view fixes footprint, a back view fixes rear parts.
+- Anything no view shows is still an assumption — say so in assumptions/unknowns, do not raise confidence because several images exist.
+- With a single image, leave "evidence" out and keep one "views" entry for the primary image.
 
 Coordinate conventions: Y up, object front faces +Z, the whole object should span roughly 1–2 units on its largest axis, and it should rest on y = 0 (bottom of the lowest root part at y ≈ 0). Root parts use world positions; child positions are offsets from the parent's centre in the parent's (rotated) frame.
 ${PRIMITIVE_GUIDE}
@@ -123,10 +132,19 @@ ${BRIEF_SCHEMA}
 Output rules: reply with ONE json code block containing the SculptBrief and nothing else. All ids unique. Parents must be defined before children. Use only the enums listed. Typical good briefs have 8–30 components.`;
 }
 
-export function authoringUserPrompt({ hint, probe }) {
-  const parts = [
-    'Reference image attached. Author the SculptBrief for the main subject.',
-  ];
+export function authoringUserPrompt({ hint, probe, views = [] }) {
+  const parts = [];
+  if (views.length > 1) {
+    parts.push(
+      `${views.length} reference images of the SAME subject are attached, in this order:`,
+      views
+        .map((v, i) => `- image ${i + 1}: ${v.angle}${v.primary ? ' (primary reference)' : ''} — viewEvidence id "${v.id}"`)
+        .join('\n'),
+      'Reconstruct one subject from all of them and cite the view ids in "views" and in each part\'s "evidence".',
+    );
+  } else {
+    parts.push('One reference image is attached (viewEvidence id "full-object"). Author the SculptBrief for the main subject.');
+  }
   if (hint) parts.push(`User note about the subject: "${hint}"`);
   if (probe) parts.push(`Technical probe (probe_image.py): ${probe.width}x${probe.height}px ${probe.type}, suitability ${probe.technicalSuitability}${probe.warnings?.length ? ', warnings: ' + probe.warnings.join('; ') : ''}.`);
   return parts.join('\n');

@@ -18,7 +18,8 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 // State
 // ------------------------------------------------------------------------------------------
 const state = {
-  image: null,          // { file, name, width, height, pngBytes, dataUrl, previewUrl }
+  images: [],           // reference views; [0] is the primary one used for framing and the sheet
+  views: [],            // the same views as written into the Pyodide filesystem
   models: [],
   model: null,
   running: false,
@@ -39,6 +40,9 @@ const state = {
   lastReview: null,
   maxFix: 3,
 };
+
+// Most of the pipeline only needs the primary reference; `state.image` keeps that shorthand.
+Object.defineProperty(state, 'image', { get: () => state.images[0] || null });
 
 const viewer = new Viewer($('[data-viewport]'));
 let game = null;
@@ -80,7 +84,7 @@ function updateActionState() {
   $('[data-cancel]').hidden = !state.running;
   let hint = '';
   if (!hasKey) hint = 'OpenRouter API anahtarını gir (sağ üst).';
-  else if (!state.image) hint = 'Bir referans görsel yükle.';
+  else if (!state.image) hint = 'En az bir referans görsel yükle.';
   else if (!state.model) hint = 'Bir vision modeli seç.';
   else if (state.running) hint = 'Pipeline çalışıyor…';
   else if (state.spec) hint = 'İyileştir: render referansla karşılaştırılır, spec düzeltilir ve model yeniden üretilir.';
@@ -212,8 +216,26 @@ async function loadModels() {
 // ------------------------------------------------------------------------------------------
 // Image input
 // ------------------------------------------------------------------------------------------
+// The user may upload one reference or several views of the same subject; each view becomes a
+// viewEvidence entry in the ObjectSculptSpec, so parts can cite the image they were seen in.
+export const MAX_REFS = 6;
+const ANGLES = [
+  ['front', 'Ön'],
+  ['three-quarter', 'Çeyrek (3/4)'],
+  ['side', 'Yan'],
+  ['back', 'Arka'],
+  ['top', 'Üst'],
+  ['bottom', 'Alt'],
+  ['detail', 'Detay'],
+  ['other', 'Diğer'],
+];
+const DEFAULT_ANGLES = ['front', 'side', 'back', 'top', 'detail', 'other'];
+
 const dropzone = $('[data-dropzone]');
-$('[data-file]').addEventListener('change', (e) => e.target.files[0] && setImage(e.target.files[0]));
+$('[data-file]').addEventListener('change', (e) => {
+  addImages(e.target.files);
+  e.target.value = '';
+});
 ['dragenter', 'dragover'].forEach((ev) =>
   dropzone.addEventListener(ev, (e) => {
     e.preventDefault();
@@ -226,16 +248,24 @@ $('[data-file]').addEventListener('change', (e) => e.target.files[0] && setImage
     dropzone.classList.remove('drag');
   }),
 );
-dropzone.addEventListener('drop', (e) => {
-  const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith('image/'));
-  if (file) setImage(file);
-});
-window.addEventListener('paste', (e) => {
-  const file = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith('image/'));
-  if (file) setImage(file);
-});
+dropzone.addEventListener('drop', (e) => addImages(e.dataTransfer?.files));
+window.addEventListener('paste', (e) => addImages(e.clipboardData?.files));
 
-async function setImage(file) {
+async function addImages(fileList) {
+  const files = [...(fileList || [])].filter((f) => f.type.startsWith('image/'));
+  if (!files.length) return;
+  const room = MAX_REFS - state.images.length;
+  if (room <= 0) {
+    toast(`En fazla ${MAX_REFS} referans görsel eklenebilir.`);
+    return;
+  }
+  for (const file of files.slice(0, room)) await readImage(file);
+  if (files.length > room) toast(`En fazla ${MAX_REFS} görsel; fazlası alınmadı.`);
+  renderRefs();
+  updateActionState();
+}
+
+async function readImage(file) {
   try {
     const bitmap = await createImageBitmap(file);
     const maxPng = 1600;
@@ -269,22 +299,69 @@ async function setImage(file) {
     g3.drawImage(bitmap, 0, 0, c3.width, c3.height);
     const reviewPng = new Uint8Array(await (await new Promise((r) => c3.toBlob(r, 'image/png'))).arrayBuffer());
 
-    if (state.image?.previewUrl) URL.revokeObjectURL(state.image.previewUrl);
-    const previewUrl = URL.createObjectURL(file);
-    state.image = { file, name: file.name, width: bitmap.width, height: bitmap.height, pngBytes, reviewPng, dataUrl, previewUrl };
-    const img = $('[data-preview]');
-    img.src = previewUrl;
-    img.hidden = false;
-    $('[data-dz-empty]').hidden = true;
-    $('[data-compare-img]').src = previewUrl;
-    const meta = $('[data-image-meta]');
-    meta.hidden = false;
-    meta.textContent = `${file.name} · ${bitmap.width}×${bitmap.height}px · ${(file.size / 1024).toFixed(0)} KB`;
-    updateActionState();
+    state.images.push({
+      id: `ref-${++refSeq}`,
+      file,
+      name: file.name,
+      width: bitmap.width,
+      height: bitmap.height,
+      size: file.size,
+      angle: DEFAULT_ANGLES[state.images.length] || 'other',
+      pngBytes,
+      reviewPng,
+      dataUrl,
+      previewUrl: URL.createObjectURL(file),
+    });
   } catch (err) {
     toast('Görsel okunamadı: ' + err.message, true);
   }
 }
+
+let refSeq = 0;
+
+function renderRefs() {
+  const list = $('[data-ref-list]');
+  list.hidden = !state.images.length;
+  $('[data-ref-count]').textContent = state.images.length ? `${state.images.length}/${MAX_REFS}` : '';
+  list.innerHTML = state.images
+    .map(
+      (img, i) => `<li data-ref="${img.id}" class="${i === 0 ? 'primary' : ''}">
+      <img src="${img.previewUrl}" alt="" />
+      <div class="ref-meta">
+        <span class="ref-name" title="${escapeHtml(img.name)}">${escapeHtml(img.name)}</span>
+        <span class="ref-dim">${img.width}×${img.height}px · ${(img.size / 1024).toFixed(0)} KB${i === 0 ? ' · <b>birincil</b>' : ''}</span>
+      </div>
+      <span class="ref-tools">
+        <select data-ref-angle aria-label="Görünüm açısı">${ANGLES.map(([v, label]) => `<option value="${v}"${img.angle === v ? ' selected' : ''}>${label}</option>`).join('')}</select>
+        <button type="button" class="ref-remove" data-ref-remove title="Kaldır" aria-label="Görseli kaldır">✕</button>
+      </span>
+    </li>`,
+    )
+    .join('');
+  $('[data-dz-empty]').querySelector('strong').textContent = state.images.length
+    ? 'Başka bir açı ekle'
+    : 'Görsel sürükle veya seç';
+  const primary = state.images[0];
+  if (primary) $('[data-compare-img]').src = primary.previewUrl;
+}
+
+$('[data-ref-list]').addEventListener('change', (e) => {
+  const select = e.target.closest('[data-ref-angle]');
+  if (!select) return;
+  const img = state.images.find((x) => x.id === e.target.closest('[data-ref]').dataset.ref);
+  if (img) img.angle = select.value;
+});
+$('[data-ref-list]').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-ref-remove]');
+  if (!btn) return;
+  const id = e.target.closest('[data-ref]').dataset.ref;
+  const index = state.images.findIndex((x) => x.id === id);
+  if (index === -1) return;
+  URL.revokeObjectURL(state.images[index].previewUrl);
+  state.images.splice(index, 1);
+  renderRefs();
+  updateActionState();
+});
 
 // ------------------------------------------------------------------------------------------
 // Step tracking (left list + "Pipeline kodları" cards)
@@ -403,6 +480,16 @@ function addCost(usage) {
 // ------------------------------------------------------------------------------------------
 // Pipeline pieces
 // ------------------------------------------------------------------------------------------
+/** viewEvidence ids handed to the model; mirrors studio_pipeline.view_id(). */
+function viewLabels() {
+  return state.views.map((v, i) => ({
+    id: i === 0 ? 'full-object' : `view-${i + 1}-${v.angle}`,
+    angle: v.angle,
+    name: v.name,
+    primary: i === 0,
+  }));
+}
+
 function checkCancelled() {
   if (state.abort?.signal.aborted) throw new DOMException('İptal edildi', 'AbortError');
 }
@@ -501,7 +588,7 @@ async function buildSpec(brief, history) {
       about: 'studio_pipeline.expand_brief(): LLM brief\'ini starter spec\'in alanlarına yerleştirir (bileşenler, malzemeler, detay envanteri, ışık).',
       source: 'py/studio_pipeline.py',
     });
-    const { spec } = await forge.api('expand', { starter, brief: current });
+    const { spec } = await forge.api('expand', { starter, brief: current, views: state.views });
     ex.done({
       detail: `${spec.componentTree.length} bileşen · ${spec.materials.length} malzeme`,
       output: { label: 'ObjectSculptSpec', filename: 'object-sculpt-spec.json', content: JSON.stringify(spec, null, 2) },
@@ -623,16 +710,30 @@ async function runConvert() {
     await ensureForge();
     checkCancelled();
 
-    const w = addStep({ kind: 'system', title: 'Referans görsel', detail: 'Pyodide dosya sistemine yazılıyor' });
-    await forge.writeFile('/work/reference.png', state.image.pngBytes);
+    const w = addStep({ kind: 'system', title: 'Referans görseller', detail: 'Pyodide dosya sistemine yazılıyor' });
+    state.views = [];
+    for (let i = 0; i < state.images.length; i += 1) {
+      const img = state.images[i];
+      const path = i === 0 ? '/work/reference.png' : `/work/refs/${i + 1}-${img.angle}.png`;
+      await forge.writeFile(path, img.pngBytes);
+      state.views.push({ angle: img.angle, path, name: img.name });
+    }
     await forge.writeFile('/work/reference-review.png', state.image.reviewPng);
-    w.done({ detail: `/work/reference.png · ${state.image.width}×${state.image.height}` });
+    w.done({ detail: state.views.map((v, i) => `${i + 1}. ${v.angle}`).join(' · ') });
 
-    const probe = await forge.api('probe', { image: '/work/reference.png' });
-    addStep(pyStep('Görsel inceleme (intake)', 'probe_image.py: format, çözünürlük ve teknik uygunluk kontrolü.', probe)).done({
-      detail: probe.result ? `${probe.result.technicalSuitability}${probe.result.warnings?.length ? ' · ' + probe.result.warnings.join('; ') : ''}` : 'çıktı okunamadı',
-    });
-    checkCancelled();
+    // probe_image.py runs on every uploaded view
+    let probe = null;
+    for (let i = 0; i < state.views.length; i += 1) {
+      const result = await forge.api('probe', { image: state.views[i].path });
+      if (i === 0) probe = result;
+      const r = result.result;
+      addStep(pyStep(
+        state.views.length > 1 ? `Görsel inceleme (intake) — ${state.views[i].angle}` : 'Görsel inceleme (intake)',
+        'probe_image.py: format, çözünürlük ve teknik uygunluk kontrolü.',
+        result,
+      )).done({ detail: r ? `${r.technicalSuitability}${r.warnings?.length ? ' · ' + r.warnings.join('; ') : ''}` : 'çıktı okunamadı' });
+      checkCancelled();
+    }
 
     setBusy('Vision modeli görseli analiz ediyor…');
     const history = [
@@ -640,8 +741,8 @@ async function runConvert() {
       {
         role: 'user',
         content: [
-          { type: 'text', text: authoringUserPrompt({ hint: $('[data-hint]').value.trim(), probe: probe.result }) },
-          { type: 'image_url', image_url: { url: state.image.dataUrl } },
+          { type: 'text', text: authoringUserPrompt({ hint: $('[data-hint]').value.trim(), probe: probe.result, views: viewLabels() }) },
+          ...state.images.map((img) => ({ type: 'image_url', image_url: { url: img.dataUrl } })),
         ],
       },
     ];
@@ -758,6 +859,11 @@ async function runRefine() {
       images.push(mapPng);
       labels.push('map-stripped render (unlit, untextured: judge form and silhouette only)');
     }
+    // the other reference views the user uploaded, so the review can judge sides the sheet misses
+    state.images.slice(1).forEach((img, i) => {
+      images.push(img.dataUrl);
+      labels.push(`extra reference photo (${img.angle}, viewEvidence id "view-${i + 2}-${img.angle}")`);
+    });
     images.push(...orbit);
     labels.push('orbit view: side', 'orbit view: back-top');
     const messages = [
@@ -992,7 +1098,7 @@ $('[data-zip]').addEventListener('click', async () => {
     zip.file(`${n}.html`, standaloneHtml(state.js, e, state.spec?.targetName || n));
     zip.file('object-sculpt-spec.json', JSON.stringify(state.spec, null, 2));
     zip.file('sculpt-brief.json', JSON.stringify(state.brief, null, 2));
-    zip.file('reference.png', state.image.pngBytes);
+    state.images.forEach((img, i) => zip.file(`references/${i + 1}-${img.angle}.png`, img.pngBytes));
     zip.file('GLB-IMPORT.txt', engineGuide(`${n}.glb`));
     zip.file(
       'README.md',
@@ -1133,10 +1239,11 @@ async function runDemo(url) {
       c.width = c.height = 64;
       const png = await new Promise((r) => c.toBlob(r, 'image/png'));
       const bytes = new Uint8Array(await png.arrayBuffer());
-      state.image = { name: 'demo.png', width: 64, height: 64, pngBytes: bytes, reviewPng: bytes, dataUrl: c.toDataURL(), previewUrl: URL.createObjectURL(blob) };
+      state.images = [{ id: 'demo', name: 'demo.png', width: 64, height: 64, size: bytes.length, angle: 'front', pngBytes: bytes, reviewPng: bytes, dataUrl: c.toDataURL(), previewUrl: URL.createObjectURL(blob) }];
     }
     await forge.writeFile('/work/reference.png', state.image.pngBytes);
     await forge.writeFile('/work/reference-review.png', state.image.reviewPng);
+    state.views = [{ angle: 'front', path: '/work/reference.png', name: state.image.name }];
     const built = await buildSpec(brief, []);
     state.brief = built.brief;
     await buildAndRender(built.spec, built.check, 'Demo brief · LLM yok');

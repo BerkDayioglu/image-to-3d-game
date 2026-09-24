@@ -41,17 +41,17 @@
     <section class="workspace">
       <aside class="panel">
         <div class="panel-block">
-          <h2><span class="num">1</span> Referans görsel</h2>
+          <h2><span class="num">1</span> Referans görseller <small data-ref-count></small></h2>
+          <ul class="ref-list" data-ref-list hidden></ul>
           <label class="dropzone" data-dropzone>
-            <input type="file" accept="image/png,image/jpeg,image/webp,image/avif" data-file hidden />
-            <img alt="" data-preview hidden />
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/avif" multiple data-file hidden />
             <div class="dz-empty" data-dz-empty>
               <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <strong>Görsel sürükle veya seç</strong>
               <span>PNG, JPG veya WebP. Tek bir nesne ya da karakter, sade arka plan en iyi sonucu verir.</span>
             </div>
           </label>
-          <div class="image-meta" data-image-meta hidden></div>
+          <p class="hint">Tek görsel yeterli. İstersen <b>aynı nesnenin farklı açılarını</b> ekle (ön, yan, arka, üst); her açı gizli yüzlerdeki tahmini azaltır, karşılığında token maliyeti artar. İlk görsel birincil referanstır; açıları listeden değiştirebilirsin.</p>
           <label class="field">
             <span>Nesne hakkında not <em>(opsiyonel)</em></span>
             <input type="text" data-hint maxlength="200" placeholder="ör. oyun için low-poly kılıç, arka yüzü düz" />
